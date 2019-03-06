@@ -130,7 +130,7 @@ subroutine time_propagation
     call dt_evolve(it)
     write(21,"(999e26.16e3)")tt(it+1),Et(it+1), &
                            & real(zrho_dm(1,1)),real(zrho_dm(2,2)),&
-                           & 2d0*real(zi*zrho_dm(1,2))
+                           & 2d0*real(zrho_dm(1,2))
 
   end do
 
@@ -151,8 +151,8 @@ subroutine dt_evolve(it)
   Et_tmp = Et(it)
 
   zHam_mat(1,1) =  0.5d0*Egap
-  zHam_mat(2,1) =  zI*Et_tmp
-  zHam_mat(1,2) = -zI*Et_tmp
+  zHam_mat(2,1) =  Et_tmp
+  zHam_mat(1,2) =  Et_tmp
   zHam_mat(2,2) = -0.5d0*Egap
 
 !RK 1, t
@@ -162,8 +162,8 @@ subroutine dt_evolve(it)
 
   Et_tmp = Et_dt2(it)
   zHam_mat(1,1) =  0.5d0*Egap
-  zHam_mat(2,1) =  zI*Et_tmp
-  zHam_mat(1,2) = -zI*Et_tmp
+  zHam_mat(2,1) =  Et_tmp
+  zHam_mat(1,2) =  Et_tmp
   zHam_mat(2,2) = -0.5d0*Egap
 
 !RK 2, t+dt/2
@@ -177,8 +177,8 @@ subroutine dt_evolve(it)
 
   Et_tmp = Et(it+1)
   zHam_mat(1,1) =  0.5d0*Egap
-  zHam_mat(2,1) =  zI*Et_tmp
-  zHam_mat(1,2) = -zI*Et_tmp
+  zHam_mat(2,1) =  Et_tmp
+  zHam_mat(1,2) =  Et_tmp
   zHam_mat(2,2) = -0.5d0*Egap
 
 !RK 4, t+dt
