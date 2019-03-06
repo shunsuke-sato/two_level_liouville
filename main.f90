@@ -25,7 +25,10 @@ module global_variables
   real(8),allocatable :: Et(:),Et_dt2(:)
   
 
-
+! Floquet
+  integer,parameter :: nmax_floquet = 8
+  complex(8),allocatable :: zpsi_F(:,:)
+  real(8) :: eps_F(2)
 
 end module global_variables
 !-------------------------------------------------------------------------------
@@ -36,7 +39,7 @@ program main
   call input
   call initialize
 
-
+  call calc_floquet_state
   call time_propagation
 
 
@@ -49,11 +52,11 @@ subroutine input
 
 
   Egap = 1d0
-  T1_relax = 1d0
-  T2_relax = 1d0
+  T1_relax = 30d0
+  T2_relax = 30d0
 
   omega0 = Egap
-  E0 = 1d-2
+  E0 = 1d-6
 
 
   Tprop = 60d0*2d0*pi/omega0
@@ -118,11 +121,16 @@ subroutine time_propagation
   implicit none
   integer :: it
   real(8) :: pop, dip
-
+  real(8) :: s_floquet
 
   open(21,file='quantities_t.out')
   write(21,"(999e26.16e3)")tt(0),Et(0),real(zrho_dm(1,1)),real(zrho_dm(2,2)),&
                           &2d0*real(zi*zrho_dm(1,2))
+
+  it = 0
+  open(22,file='fidelity_t.out')
+  call calc_floquet_fidelity_inst(it,s_floquet)
+  write(22,"(999e26.16e3)")tt(0),s_floquet
 
 
   do it = 0,nt
@@ -132,9 +140,13 @@ subroutine time_propagation
                            & real(zrho_dm(1,1)),real(zrho_dm(2,2)),&
                            & 2d0*real(zrho_dm(1,2))
 
+  call calc_floquet_fidelity_inst(it,s_floquet)
+  write(22,"(999e26.16e3)")tt(it),s_floquet
+
   end do
 
   close(21)
+  close(22)
 
 end subroutine time_propagation
 !-------------------------------------------------------------------------------
@@ -221,7 +233,170 @@ subroutine Lrho_op(zrho_in, zHam_in, zLrho_out)
   
 end subroutine Lrho_op
 !-------------------------------------------------------------------------------
+subroutine calc_floquet_state
+  use global_variables
+  implicit none
+  integer :: nmat
+  complex(8),allocatable :: zHam_F(:,:)
+  complex(8) :: zHam00(2,2),zHam01(2,2),zHam10(2,2)
+  integer :: ifloquet, jfloquet
+  integer :: i,j
+
+! for LAPACK    =====
+  integer :: lwork,info
+  complex(8),allocatable :: work(:)
+  real(8),allocatable    :: rwork(:),w(:)
+
+  nmat = (2*nmax_floquet + 1)*2
+
+  lwork = min(64, nmat)*max(1,2*nmat-1)
+  if(lwork < 1024)lwork = 1024
+  allocate(w(nmat))
+  allocate(work(lwork), rwork(max(1, 3*nmat-2)))
+! for LAPACK    =====
+
+
+  nmat = (2*nmax_floquet + 1)*2
+  allocate(zHam_F(nmat,nmat))
+
+  zHam00 = 0d0
+  zHam00(1,1) =  0.5d0*Egap
+  zHam00(2,2) = -0.5d0*Egap
+
+  zHam01 = 0d0
+  zHam01(2,1) = -0.5d0*zI*E0
+  zHam01(1,2) = -0.5d0*zI*E0
+
+  zHam10 = 0d0
+  zHam10(2,1) =  0.5d0*zI*E0
+  zHam10(1,2) =  0.5d0*zI*E0
+
+
+  zHam_F = 0d0
+  do ifloquet = -nmax_floquet,nmax_floquet
+
+! (m,m)
+    jfloquet = ifloquet
+    i = 2*(ifloquet+nmax_floquet)+1
+    j = 2*(jfloquet+nmax_floquet)+1
+
+    zHam_F(i:i+1,j:j+1) = zHam00(1:2,1:2)
+    zHam_F(i,i) = zHam_F(i,i) - ifloquet*omega0
+    zHam_F(i+1,i+1) = zHam_F(i+1,i+1) - ifloquet*omega0
+
+! (m,m+1)
+    jfloquet = ifloquet + 1
+    if(jfloquet <= nmax_floquet)then
+      i = 2*(ifloquet+nmax_floquet)+1
+      j = 2*(jfloquet+nmax_floquet)+1
+
+      zHam_F(i:i+1,j:j+1) = zHam01(1:2,1:2)
+    end if
+
+! (m,m+1)
+    jfloquet = ifloquet - 1
+    if(jfloquet >= -nmax_floquet)then
+      i = 2*(ifloquet+nmax_floquet)+1
+      j = 2*(jfloquet+nmax_floquet)+1
+
+      zHam_F(i:i+1,j:j+1) = zHam10(1:2,1:2)
+    end if
+
+  end do
+
+  call zheev('V', 'U', nmat, zHam_F, nmat, w, work, lwork, rwork, info)
+
+
+  allocate(zpsi_F(nmat,2))
+  i = 2*(0+nmax_floquet)+1
+  zpsi_F(:,1:2) = zHam_F(:,i:i+1)
+  eps_F(1:2) = w(i:i+1)
+
+
+end subroutine calc_floquet_state
 !-------------------------------------------------------------------------------
+subroutine calc_instantaneous_floquet_state(it, zpsi_F_inst)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  complex(8),intent(out) :: zpsi_F_inst(2,2)
+  integer :: ifloquet, i
+  real(8) :: xx
+
+  xx = tt(it)
+
+  zpsi_F_inst = 0d0
+  do ifloquet = -nmax_floquet, nmax_floquet
+    i = 2*(ifloquet+nmax_floquet)+1
+
+    zpsi_F_inst(:,:) = zpsi_F_inst(:,:) &
+      + exp(-zI*ifloquet*omega0*xx)*zpsi_F(i:i+1,1:2)
+  end do
+
+  zpsi_F_inst(:,1) = exp(-zI*eps_F(1)*xx)*zpsi_F_inst(:,1)
+  zpsi_F_inst(:,2) = exp(-zI*eps_F(2)*xx)*zpsi_F_inst(:,2)
+
+
+
+end subroutine calc_instantaneous_floquet_state
 !-------------------------------------------------------------------------------
+subroutine calc_floquet_fidelity_inst(it,s_floquet)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  real(8),intent(out) :: s_floquet
+  complex(8) :: zpsi_F_inst(2,2)
+  complex(8) :: zpsi_NO(2,2)
+  real(8) :: smat(2,2)
+  real(8) :: lambda(2)
+
+  call calc_instantaneous_floquet_state(it, zpsi_F_inst)
+  call diag_2x2(zrho_dm,zpsi_NO,lambda)
+
+  smat(1,1) = abs(sum(conjg(zpsi_NO(:,1))*zpsi_F_inst(:,1)))**2
+  smat(2,1) = abs(sum(conjg(zpsi_NO(:,2))*zpsi_F_inst(:,1)))**2
+  smat(1,2) = abs(sum(conjg(zpsi_NO(:,1))*zpsi_F_inst(:,2)))**2
+  smat(2,2) = abs(sum(conjg(zpsi_NO(:,2))*zpsi_F_inst(:,2)))**2
+
+  s_floquet = smat(1,1)*smat(2,2)-smat(1,2)*smat(2,1)
+  s_floquet = abs(s_floquet)
+
+
+end subroutine calc_floquet_fidelity_inst
 !-------------------------------------------------------------------------------
+subroutine diag_2x2(zmat,zvec,lambda)
+  implicit none
+  complex(8),intent(in)  :: zmat(2,2)
+  complex(8),intent(out) :: zvec(2,2)
+  real(8),intent(out)     :: lambda(2)
+  real(8) :: a,b,ss
+  complex(8) :: zc
+  complex(8) :: zx,zy
+  
+  a = real(zmat(1,1))
+  b = real(zmat(2,2))
+  zc = zmat(2,1)
+
+  if(a>b)then
+     lambda(1) = 0.5d0*( (a+b)+sqrt((a-b)**2+4d0*abs(zc)**2) )
+     lambda(2) = 0.5d0*( (a+b)-sqrt((a-b)**2+4d0*abs(zc)**2) )
+  else
+     lambda(1) = 0.5d0*( (a+b)-sqrt((a-b)**2+4d0*abs(zc)**2) )
+     lambda(2) = 0.5d0*( (a+b)+sqrt((a-b)**2+4d0*abs(zc)**2) )
+  end if
+  zy = zc/(lambda(1)-b)
+  zx = conjg(zc)/(lambda(2)-a)
+
+! vector 1
+  ss = 1d0/sqrt((1d0+abs(zy)**2))
+  zvec(1,1) = ss
+  zvec(2,1) = ss*zy
+  
+! vector 2
+  ss = 1d0/sqrt((1d0+abs(zx)**2))
+  zvec(1,2) = ss*zx
+  zvec(2,2) = ss
+
+  
+end subroutine diag_2x2
 !-------------------------------------------------------------------------------
