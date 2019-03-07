@@ -30,6 +30,14 @@ module global_variables
   complex(8),allocatable :: zpsi_F(:,:)
   real(8) :: eps_F(2)
 
+! Photoelectron spectroscopy
+  logical,parameter :: if_calc_PES = .false.
+  integer :: it_PES_ini, it_PES_fin
+  integer :: NE_PES
+  real(8),allocatable :: eps_PES(:)
+  real(8),allocatable :: pop_PES(:)
+  complex(8),allocatable :: zdip_PES(:)
+
 end module global_variables
 !-------------------------------------------------------------------------------
 program main
@@ -61,8 +69,6 @@ subroutine input
 
   Tprop = 60d0*2d0*pi/omega0
   dt = 0.1d0
-
-
 
 
   write(*,"(A,2x,e26.16e3)")"input   dt=",dt
@@ -399,4 +405,16 @@ subroutine diag_2x2(zmat,zvec,lambda)
 
   
 end subroutine diag_2x2
+!-------------------------------------------------------------------------------
+subroutine initialize_PES
+  use global_variables
+  implicit none
+
+end subroutine initialize_PES
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
