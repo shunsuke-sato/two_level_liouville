@@ -50,7 +50,7 @@ program main
   call input
   call initialize
 
-  call calc_floquet_state_vs_E0 ! temporal
+!  call calc_floquet_state_vs_E0 ! temporal
 
   call calc_floquet_state
 
@@ -72,7 +72,7 @@ subroutine input
   T2_relax = 30d0
 
   omega0 = Egap
-  E0 = 10d0
+  E0 = 1d0
 
 
   Tprop = 60d0*2d0*pi/omega0
@@ -493,12 +493,12 @@ subroutine dt_evolve_PES_1st_half(it)
   real(8) :: ss
   complex(8) :: zs
 
-!  ss = 0.5d0*real(zrho_dm(2,2))*Et_env_PES(it) |g>
-  ss = 0.5d0*real(zrho_dm(1,1))*Et_env_PES(it) ! |e>
+  ss = 0.5d0*real(zrho_dm(2,2))*Et_env_PES(it) ! |g>
+!  ss = 0.5d0*real(zrho_dm(1,1))*Et_env_PES(it) ! |e>
 
   do ipes = 0, NE_PES
-!    zs = exp(zI*(eps_PES(ipes) +0.5d0*Egap - omega_PES)*tt(it)) ! |g>
-    zs = exp(zI*(eps_PES(ipes) -0.5d0*Egap - omega_PES)*tt(it)) ! |e>
+    zs = exp(zI*(eps_PES(ipes) +0.5d0*Egap - omega_PES)*tt(it)) ! |g>
+!    zs = exp(zI*(eps_PES(ipes) -0.5d0*Egap - omega_PES)*tt(it)) ! |e>
     pop_PES(ipes)  = pop_PES(ipes)  + 0.5d0*dt*real(conjg(zs)*Et_env_PES(it)*zdip_PES(ipes))
     zdip_PES(ipes) = zdip_PES(ipes) + 0.5d0*dt*ss*zs
   end do
@@ -515,12 +515,12 @@ subroutine dt_evolve_PES_2nd_half(it)
   real(8) :: ss
   complex(8) :: zs
 
-!  ss = 0.5d0*real(zrho_dm(2,2))*Et_env_PES(it+1) ! |g>
-  ss = 0.5d0*real(zrho_dm(1,1))*Et_env_PES(it+1) ! |e>
+  ss = 0.5d0*real(zrho_dm(2,2))*Et_env_PES(it+1) ! |g>
+!  ss = 0.5d0*real(zrho_dm(1,1))*Et_env_PES(it+1) ! |e>
 
   do ipes = 0, NE_PES
-!    zs = exp(zI*(eps_PES(ipes) +0.5d0*Egap - omega_PES)*tt(it+1)) ! |g>
-    zs = exp(zI*(eps_PES(ipes) -0.5d0*Egap - omega_PES)*tt(it+1)) ! |e>
+    zs = exp(zI*(eps_PES(ipes) +0.5d0*Egap - omega_PES)*tt(it+1)) ! |g>
+!    zs = exp(zI*(eps_PES(ipes) -0.5d0*Egap - omega_PES)*tt(it+1)) ! |e>
     zdip_PES(ipes) = zdip_PES(ipes) + 0.5d0*dt*ss*zs
     pop_PES(ipes)  = pop_PES(ipes)  + 0.5d0*dt*real(conjg(zs)*Et_env_PES(it+1)*zdip_PES(ipes))
   end do
