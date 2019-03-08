@@ -26,7 +26,7 @@ module global_variables
   
 
 ! Floquet
-  integer,parameter :: nmax_floquet = 128
+  integer,parameter :: nmax_floquet = 32
   complex(8),allocatable :: zpsi_F(:,:)
   real(8) :: eps_F(2)
 
@@ -49,6 +49,8 @@ program main
 
   call input
   call initialize
+
+  call calc_floquet_state_vs_E0 ! temporal
 
   call calc_floquet_state
 
@@ -526,6 +528,101 @@ subroutine dt_evolve_PES_2nd_half(it)
   
 end subroutine dt_evolve_PES_2nd_half
 !-------------------------------------------------------------------------------
+subroutine calc_floquet_state_vs_E0
+  use global_variables
+  implicit none
+  integer :: nmat
+  complex(8),allocatable :: zHam_F(:,:)
+  complex(8) :: zHam00(2,2),zHam01(2,2),zHam10(2,2)
+  integer :: ifloquet, jfloquet
+  integer :: i,j
+  real(8) :: Efield, Efield_ini, Efield_fin
+  integer :: NEfield, ifield
+
+! for LAPACK    =====
+  integer :: lwork,info
+  complex(8),allocatable :: work(:)
+  real(8),allocatable    :: rwork(:),w(:)
+
+  nmat = (2*nmax_floquet + 1)*2
+
+  lwork = min(64, nmat)*max(1,2*nmat-1)
+  if(lwork < 1024)lwork = 1024
+  allocate(w(nmat))
+  allocate(work(lwork), rwork(max(1, 3*nmat-2)))
+! for LAPACK    =====
+
+
+
+  allocate(zHam_F(nmat,nmat))
+
+  Efield_ini = 1d-4
+  Efield_fin = 1d0
+  NEfield = 64
+
+  open(20,file="eps_Floquet.out")
+
+  do ifield = 0, NEfield
+    Efield = Efield_ini + ifield*(Efield_fin-Efield_ini)/NEfield
+
+  zHam00 = 0d0
+  zHam00(1,1) =  0.5d0*Egap
+  zHam00(2,2) = -0.5d0*Egap
+
+  zHam01 = 0d0
+  zHam01(2,1) = -0.5d0*zI*Efield
+  zHam01(1,2) = -0.5d0*zI*Efield
+
+  zHam10 = 0d0
+  zHam10(2,1) =  0.5d0*zI*Efield
+  zHam10(1,2) =  0.5d0*zI*Efield
+
+  zHam_F = 0d0
+  do ifloquet = -nmax_floquet,nmax_floquet
+
+! (m,m)
+    jfloquet = ifloquet
+    i = 2*(ifloquet+nmax_floquet)+1
+    j = 2*(jfloquet+nmax_floquet)+1
+
+    zHam_F(i:i+1,j:j+1) = zHam00(1:2,1:2)
+    zHam_F(i,i) = zHam_F(i,i) - ifloquet*omega0
+    zHam_F(i+1,i+1) = zHam_F(i+1,i+1) - ifloquet*omega0
+
+! (m,m+1)
+    jfloquet = ifloquet + 1
+    if(jfloquet <= nmax_floquet)then
+      i = 2*(ifloquet+nmax_floquet)+1
+      j = 2*(jfloquet+nmax_floquet)+1
+
+      zHam_F(i:i+1,j:j+1) = zHam01(1:2,1:2)
+    end if
+
+! (m,m+1)
+    jfloquet = ifloquet - 1
+    if(jfloquet >= -nmax_floquet)then
+      i = 2*(ifloquet+nmax_floquet)+1
+      j = 2*(jfloquet+nmax_floquet)+1
+
+      zHam_F(i:i+1,j:j+1) = zHam10(1:2,1:2)
+    end if
+
+  end do
+
+  call zheev('V', 'U', nmat, zHam_F, nmat, w, work, lwork, rwork, info)
+
+  i = 2*(0+nmax_floquet)+1
+
+!  write(20,"(999e26.16e3)")Efield,(w(j),sum(abs(zHmat_F(i:i+1,j))**2),j=1,nmat)
+  write(20,"(999e26.16e3)")Efield,(w(j),sum(abs(zHam_F(i:i+1,j))**2),j=1,nmat)
+
+  end do
+  close(20)
+
+  stop
+
+
+end subroutine calc_floquet_state_vs_E0
 !-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
