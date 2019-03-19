@@ -19,8 +19,8 @@ module global_variables
   
 
 ! laser paraemter
-  real(8) :: E0, omega0
-  real(8),allocatable :: Et(:),Et_dt2(:)
+  real(8) :: E0, omega0, T0
+  real(8),allocatable :: Et(:)
   
 
 ! Floquet
@@ -60,11 +60,12 @@ subroutine input
   Egap = 1d0
 
   omega0 = Egap
-  E0 = 1d0
+  E0 = 0.1d0
+  T0 = 10d0*2d0*pi/omega0
 
 
   Tprop = 60d0*2d0*pi/omega0
-  dt = 0.01d0
+  dt = 0.005d0
 
 
   write(*,"(A,2x,e26.16e3)")"input   dt=",dt
@@ -103,15 +104,15 @@ subroutine initialize_laser
   integer :: it
   real(8) :: xx
 
-  allocate(Et(0:nt+1),Et_dt2(0:nt+1))
+  allocate(Et(0:nt+1))
 
   do it = 0, nt+1
     xx = tt(it)
-    Et(it) = E0*sin(omega0*xx)
-
-    xx = tt(it) + dt*0.5d0
-    Et_dt2(it) = E0*sin(omega0*xx)
-
+    if(xx < T0)then
+      Et(it) = E0*sin(omega0*xx)*sin(0.5d0*pi*xx/T0)**2
+    else
+      Et(it) = E0*sin(omega0*xx)
+    end if
 
   end do
   
@@ -125,6 +126,25 @@ subroutine time_propagation
   real(8) :: pop, dip
 
 
+  open(21,file='quantities_t.out')
+  write(21,"(999e26.16e3)")tt(0),Et(0),abs(zpsi(1))**2&
+                                      ,abs(zpsi(2))**2&
+                                      ,2d0*real(conjg(zpsi(1))*zpsi(2))
+
+  it = 0
+
+  do it = 0,nt
+
+    call dt_evolve(it)
+
+    write(21,"(999e26.16e3)")tt(it+1),Et(it+1),abs(zpsi(1))**2&
+                                              ,abs(zpsi(2))**2&
+                                              ,2d0*real(conjg(zpsi(1))*zpsi(2))
+
+  end do
+
+  close(21)
+
 end subroutine time_propagation
 !-------------------------------------------------------------------------------
 subroutine dt_evolve(it)
@@ -134,6 +154,7 @@ subroutine dt_evolve(it)
   complex(8) :: zpsi_t(2)
   complex(8) :: zHam_mat(2,2)
   complex(8) :: zeigv(2,2)
+  real(8) :: lambda(2)
   real(8) :: Et_tmp
 
 
@@ -146,6 +167,14 @@ subroutine dt_evolve(it)
   zHam_mat(1,2) =  Et_tmp
   zHam_mat(2,2) = -0.5d0*Egap
 
+  call diag_2x2(zHam_mat,zeigv,lambda)
+
+  zpsi_t(1) = sum(conjg(zeigv(:,1))*zpsi(:))
+  zpsi_t(2) = sum(conjg(zeigv(:,2))*zpsi(:))
+
+  zpsi(:) = zpsi_t(1)*exp(zI*lambda(1)*0.5d0*dt)*zeigv(:,1) &
+           +zpsi_t(2)*exp(zI*lambda(2)*0.5d0*dt)*zeigv(:,2)
+
 
 ! t+dt/2 -> t+dt
 
@@ -156,6 +185,14 @@ subroutine dt_evolve(it)
   zHam_mat(2,1) =  Et_tmp
   zHam_mat(1,2) =  Et_tmp
   zHam_mat(2,2) = -0.5d0*Egap
+
+  call diag_2x2(zHam_mat,zeigv,lambda)
+
+  zpsi_t(1) = sum(conjg(zeigv(:,1))*zpsi(:))
+  zpsi_t(2) = sum(conjg(zeigv(:,2))*zpsi(:))
+
+  zpsi(:) = zpsi_t(1)*exp(zI*lambda(1)*0.5d0*dt)*zeigv(:,1) &
+           +zpsi_t(2)*exp(zI*lambda(2)*0.5d0*dt)*zeigv(:,2)
 
 
 
