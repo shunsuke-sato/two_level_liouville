@@ -26,9 +26,20 @@ module global_variables
   
 
 ! Floquet
-  integer,parameter :: nmax_floquet = 8
+  integer,parameter :: nmax_floquet = 32
   complex(8),allocatable :: zpsi_F(:,:)
   real(8) :: eps_F(2)
+
+! Photoelectron spectroscopy
+  logical,parameter :: if_calc_PES = .true.
+  integer :: it_PES_ini, it_PES_fin
+  integer :: NE_PES
+  real(8),allocatable :: eps_PES(:)
+  real(8),allocatable :: pop_PES(:)
+  complex(8),allocatable :: zdip_PES(:)
+  real(8),allocatable :: Et_env_PES(:)
+  real(8) :: omega_PES, omega_range_PES
+  real(8) :: Tpulse_PES
 
 end module global_variables
 !-------------------------------------------------------------------------------
@@ -39,7 +50,12 @@ program main
   call input
   call initialize
 
+!  call calc_floquet_state_vs_E0 ! temporal
+
   call calc_floquet_state
+
+  if(if_calc_pes)call initialize_PES
+
   call time_propagation
 
 
@@ -56,13 +72,11 @@ subroutine input
   T2_relax = 30d0
 
   omega0 = Egap
-  E0 = 1d-6
+  E0 = 1d0
 
 
   Tprop = 60d0*2d0*pi/omega0
-  dt = 0.1d0
-
-
+  dt = 0.01d0
 
 
   write(*,"(A,2x,e26.16e3)")"input   dt=",dt
@@ -119,7 +133,7 @@ end subroutine initialize_laser
 subroutine time_propagation
   use global_variables
   implicit none
-  integer :: it
+  integer :: it, ipes
   real(8) :: pop, dip
   real(8) :: s_floquet
 
@@ -135,7 +149,11 @@ subroutine time_propagation
 
   do it = 0,nt
 
+    if(if_calc_pes .and. it>=it_PES_ini .and. it<=it_PES_fin)call dt_evolve_PES_1st_half(it)
     call dt_evolve(it)
+    if(if_calc_pes .and. it>=it_PES_ini .and. it<=it_PES_fin)call dt_evolve_PES_2nd_half(it)
+
+
     write(21,"(999e26.16e3)")tt(it+1),Et(it+1), &
                            & real(zrho_dm(1,1)),real(zrho_dm(2,2)),&
                            & 2d0*real(zrho_dm(1,2))
@@ -147,6 +165,15 @@ subroutine time_propagation
 
   close(21)
   close(22)
+
+
+  if(if_calc_pes)then
+    open(20,file='pes_spectrum.out')
+    do ipes = 0,NE_PES
+      write(20,"(999e26.16e3)")eps_PES(ipes)-omega_PES,pop_PES(ipes)
+    end do
+    close(20)
+  end if
 
 end subroutine time_propagation
 !-------------------------------------------------------------------------------
@@ -352,6 +379,7 @@ subroutine calc_floquet_fidelity_inst(it,s_floquet)
 
   call calc_instantaneous_floquet_state(it, zpsi_F_inst)
   call diag_2x2(zrho_dm,zpsi_NO,lambda)
+!  write(*,*)"norm-F",sum(abs(zpsi_F_inst(:,1))**2),sum(abs(zpsi_F_inst(:,2))**2)
 
   smat(1,1) = abs(sum(conjg(zpsi_NO(:,1))*zpsi_F_inst(:,1)))**2
   smat(2,1) = abs(sum(conjg(zpsi_NO(:,2))*zpsi_F_inst(:,1)))**2
@@ -399,4 +427,204 @@ subroutine diag_2x2(zmat,zvec,lambda)
 
   
 end subroutine diag_2x2
+!-------------------------------------------------------------------------------
+subroutine initialize_PES
+  use global_variables
+  implicit none
+  real(8) :: wi, wf, dw
+  integer :: iw, it
+  real(8) :: xx
+
+  if(.not. if_calc_PES) stop 'Error in initialize_PES.'
+
+  NE_PES = 512
+  omega_PES = Egap * 100d0
+  omega_range_PES = 3d0*Egap
+
+  Tpulse_PES = 10d0*2d0*pi/omega0
+
+  allocate(eps_PES(0:NE_PES), pop_PES(0:NE_PES), zdip_PES(0:NE_PES))
+  allocate(Et_env_PES(0:nt+1))
+  zdip_PES = 0d0
+  pop_PES = 0d0
+
+  wi = omega_PES - omega_range_PES
+  wf = omega_PES + omega_range_PES
+  dw = (wf-wi)/NE_PES
+
+  do iw = 0, NE_PES
+    
+    eps_PES(iw) = wi + dw*iw
+    
+  end do
+
+  it_PES_ini = -1
+  it_PES_fin = -1
+
+
+  Et_env_PES = 0d0
+  do it = 0,nt+1
+    if(tt(it) >= Tprop - Tpulse_PES)then
+      if(it_PES_ini == -1)it_PES_ini = it
+      xx = tt(it) - (Tprop - Tpulse_PES)
+      Et_env_PES(it) = sin(pi*xx/tpulse_PES)**2
+    else if(tt(it) >= Tprop)then
+      if(it_PES_fin == -1)it_PES_fin = it
+    end if
+  end do
+  if(it_PES_fin == -1)it_PES_fin = nt+1
+  write(*,"(A,2x,I7)")"it_pes_ini=",it_pes_ini
+  write(*,"(A,2x,I7)")"it_pes_fin=",it_pes_fin
+
+  open(20,file='Et_env_PES.out')
+  do it = 0,nt+1
+    write(20,"(999e26.16e3)")tt(it),Et_env_PES(it)
+  end do
+  close(20)
+  
+
+end subroutine initialize_PES
+!-------------------------------------------------------------------------------
+subroutine dt_evolve_PES_1st_half(it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  integer :: ipes
+  real(8) :: ss
+  complex(8) :: zs
+
+  ss = 0.5d0*real(zrho_dm(2,2))*Et_env_PES(it) ! |g>
+!  ss = 0.5d0*real(zrho_dm(1,1))*Et_env_PES(it) ! |e>
+
+  do ipes = 0, NE_PES
+    zs = exp(zI*(eps_PES(ipes) +0.5d0*Egap - omega_PES)*tt(it)) ! |g>
+!    zs = exp(zI*(eps_PES(ipes) -0.5d0*Egap - omega_PES)*tt(it)) ! |e>
+    pop_PES(ipes)  = pop_PES(ipes)  + 0.5d0*dt*real(conjg(zs)*Et_env_PES(it)*zdip_PES(ipes))
+    zdip_PES(ipes) = zdip_PES(ipes) + 0.5d0*dt*ss*zs
+  end do
+  
+  
+
+end subroutine dt_evolve_PES_1st_half
+!-------------------------------------------------------------------------------
+subroutine dt_evolve_PES_2nd_half(it)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  integer :: ipes
+  real(8) :: ss
+  complex(8) :: zs
+
+  ss = 0.5d0*real(zrho_dm(2,2))*Et_env_PES(it+1) ! |g>
+!  ss = 0.5d0*real(zrho_dm(1,1))*Et_env_PES(it+1) ! |e>
+
+  do ipes = 0, NE_PES
+    zs = exp(zI*(eps_PES(ipes) +0.5d0*Egap - omega_PES)*tt(it+1)) ! |g>
+!    zs = exp(zI*(eps_PES(ipes) -0.5d0*Egap - omega_PES)*tt(it+1)) ! |e>
+    zdip_PES(ipes) = zdip_PES(ipes) + 0.5d0*dt*ss*zs
+    pop_PES(ipes)  = pop_PES(ipes)  + 0.5d0*dt*real(conjg(zs)*Et_env_PES(it+1)*zdip_PES(ipes))
+  end do
+  
+  
+end subroutine dt_evolve_PES_2nd_half
+!-------------------------------------------------------------------------------
+subroutine calc_floquet_state_vs_E0
+  use global_variables
+  implicit none
+  integer :: nmat
+  complex(8),allocatable :: zHam_F(:,:)
+  complex(8) :: zHam00(2,2),zHam01(2,2),zHam10(2,2)
+  integer :: ifloquet, jfloquet
+  integer :: i,j
+  real(8) :: Efield, Efield_ini, Efield_fin
+  integer :: NEfield, ifield
+
+! for LAPACK    =====
+  integer :: lwork,info
+  complex(8),allocatable :: work(:)
+  real(8),allocatable    :: rwork(:),w(:)
+
+  nmat = (2*nmax_floquet + 1)*2
+
+  lwork = min(64, nmat)*max(1,2*nmat-1)
+  if(lwork < 1024)lwork = 1024
+  allocate(w(nmat))
+  allocate(work(lwork), rwork(max(1, 3*nmat-2)))
+! for LAPACK    =====
+
+
+
+  allocate(zHam_F(nmat,nmat))
+
+  Efield_ini = 1d-4
+  Efield_fin = 1d0
+  NEfield = 64
+
+  open(20,file="eps_Floquet.out")
+
+  do ifield = 0, NEfield
+    Efield = Efield_ini + ifield*(Efield_fin-Efield_ini)/NEfield
+
+  zHam00 = 0d0
+  zHam00(1,1) =  0.5d0*Egap
+  zHam00(2,2) = -0.5d0*Egap
+
+  zHam01 = 0d0
+  zHam01(2,1) = -0.5d0*zI*Efield
+  zHam01(1,2) = -0.5d0*zI*Efield
+
+  zHam10 = 0d0
+  zHam10(2,1) =  0.5d0*zI*Efield
+  zHam10(1,2) =  0.5d0*zI*Efield
+
+  zHam_F = 0d0
+  do ifloquet = -nmax_floquet,nmax_floquet
+
+! (m,m)
+    jfloquet = ifloquet
+    i = 2*(ifloquet+nmax_floquet)+1
+    j = 2*(jfloquet+nmax_floquet)+1
+
+    zHam_F(i:i+1,j:j+1) = zHam00(1:2,1:2)
+    zHam_F(i,i) = zHam_F(i,i) - ifloquet*omega0
+    zHam_F(i+1,i+1) = zHam_F(i+1,i+1) - ifloquet*omega0
+
+! (m,m+1)
+    jfloquet = ifloquet + 1
+    if(jfloquet <= nmax_floquet)then
+      i = 2*(ifloquet+nmax_floquet)+1
+      j = 2*(jfloquet+nmax_floquet)+1
+
+      zHam_F(i:i+1,j:j+1) = zHam01(1:2,1:2)
+    end if
+
+! (m,m+1)
+    jfloquet = ifloquet - 1
+    if(jfloquet >= -nmax_floquet)then
+      i = 2*(ifloquet+nmax_floquet)+1
+      j = 2*(jfloquet+nmax_floquet)+1
+
+      zHam_F(i:i+1,j:j+1) = zHam10(1:2,1:2)
+    end if
+
+  end do
+
+  call zheev('V', 'U', nmat, zHam_F, nmat, w, work, lwork, rwork, info)
+
+  i = 2*(0+nmax_floquet)+1
+
+!  write(20,"(999e26.16e3)")Efield,(w(j),sum(abs(zHmat_F(i:i+1,j))**2),j=1,nmat)
+  write(20,"(999e26.16e3)")Efield,(w(j),sum(abs(zHam_F(i:i+1,j))**2),j=1,nmat)
+
+  end do
+  close(20)
+
+  stop
+
+
+end subroutine calc_floquet_state_vs_E0
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
+!-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
