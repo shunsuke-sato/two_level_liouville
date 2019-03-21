@@ -243,7 +243,7 @@ subroutine dt_evolve(it, prob)
                      +2d0*zpsi_rk(:,3)&
                          +zpsi_rk(:,4))
 
-  ss = abs(zps(1))**2 + abs(zps(2))**2
+  ss = abs(zpsi(1))**2 + abs(zpsi(2))**2
   if(ss > prob)return
 
   zLpsi_t(1,1) = 0d0    ; zLpsi_t(2,1) =  zpsi(1)
@@ -254,7 +254,16 @@ subroutine dt_evolve(it, prob)
   ss = p1 + p2
   p1 = p1/ss; p2 = p2/ss
   
+  call ranlux_double_mpi(ss)
+  if(ss < p1)then
+    zpsi = zLpsi_t(:,1)
+  else
+    zpsi = zLpsi_t(:,2)
+  end if
+  ss = abs(zpsi(1))**2 + abs(zpsi(2))**2
+  zpsi = zpsi/sqrt(ss)
 
+  call ranlux_double_mpi(prob)
 
 end subroutine dt_evolve
 !-------------------------------------------------------------------------------
