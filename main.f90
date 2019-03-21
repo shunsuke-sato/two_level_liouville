@@ -72,7 +72,7 @@ subroutine input
   T2_relax = 30d0
 
   omega0 = Egap
-  E0 = 1d0
+  E0 = 0.3d0
 
 
   Tprop = 60d0*2d0*pi/omega0

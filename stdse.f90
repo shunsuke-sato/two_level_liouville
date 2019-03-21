@@ -42,7 +42,7 @@ module global_variables
   real(8) :: eps_F(2)
 
 ! Photoelectron spectroscopy
-  logical,parameter :: if_calc_PES = .true.
+  logical,parameter :: if_calc_PES = .false.
   integer :: it_PES_ini, it_PES_fin
   integer :: NE_PES
   real(8),allocatable :: eps_PES(:)
@@ -75,16 +75,16 @@ subroutine input
   use global_variables
   implicit none
 
-  ntraj = 100
+  ntraj = 1024
 
   Egap = 1d0
   T1_relax = 30d0
   T2_relax = 30d0
 
-! L1 =  sigma_- =(0, 0), L2 = sigma_z = (1, 0)
-!                (1, 0),                (0,-1)
+! L1 =  sigma_- =(0, 0), L2 = -sigma_z = (-1, 0)
+!                (1, 0),                 (0, 1)
   gamma1 = 1d0/T1_relax
-  gamma2 = 0.5d0*(1d0/T2_relax - 0.5d0*gamma2)
+  gamma2 = 0.5d0*(1d0/T2_relax - 0.5d0*gamma1)
 
   omega0 = Egap
   E0 = 0.3d0
@@ -168,7 +168,11 @@ subroutine time_propagation
   real(8) :: prob
   integer :: it, ipes
   integer :: itraj
-  
+  real(8) :: ss
+  real(8),allocatable :: pop(:,:), dip(:)
+
+  allocate(pop(0:nt+1,2), dip(0:nt+1))
+  pop = 0d0; dip = 0d0
 
   do itraj = 1, ntraj
     if(mod(itraj, comm_nproc_global) /= comm_id_global)cycle
@@ -176,14 +180,34 @@ subroutine time_propagation
     zpsi = 0d0
     zpsi(2) = 1d0
     call ranlux_double_mpi(prob)
+    it = 0
+    ss = sum(abs(zpsi)**2)
+    pop(it,1) = pop(it,1) + abs(zpsi(1))**2/ss
+    pop(it,2) = pop(it,2) + abs(zpsi(2))**2/ss
+    dip(it)   = dip(it)   + 2d0*real(conjg(zpsi(1))*zpsi(2))/ss
 
     do it = 0,nt
 
       call dt_evolve(it, prob)
+      ss = sum(abs(zpsi)**2)
+      pop(it+1,1) = pop(it+1,1) + abs(zpsi(1))**2/ss
+      pop(it+1,2) = pop(it+1,2) + abs(zpsi(2))**2/ss
+      dip(it+1)   = dip(it+1)   + 2d0*real(conjg(zpsi(1))*zpsi(2))/ss
 
     end do
 
   end do
+
+  call comm_allreduce(pop); pop=pop/ntraj
+  call comm_allreduce(dip); dip=dip/ntraj
+
+  if(if_root_global)then
+    open(21,file='quantities_t.out')
+    do it = 0,nt+1
+      write(21,"(999e26.16e3)")tt(it),Et(it),pop(it,1),pop(it,2),dip(it)
+    end do
+    close(21)
+  end if
 
 end subroutine time_propagation
 !-------------------------------------------------------------------------------
@@ -236,7 +260,7 @@ subroutine dt_evolve(it, prob)
 
 !RK4
   zpsi_t = zpsi -zI*dt*zpsi_rk(:,3)
-  zpsi_rk(:,3) = matmul(zHam_mat, zpsi_t)
+  zpsi_rk(:,4) = matmul(zHam_mat, zpsi_t)
 
   zpsi = zpsi -zI*dt/6d0*(zpsi_rk(:,1)&
                      +2d0*zpsi_rk(:,2)&
@@ -246,8 +270,8 @@ subroutine dt_evolve(it, prob)
   ss = abs(zpsi(1))**2 + abs(zpsi(2))**2
   if(ss > prob)return
 
-  zLpsi_t(1,1) = 0d0    ; zLpsi_t(2,1) =  zpsi(1)
-  zLpsi_t(1,2) = zpsi(1); zLpsi_t(2,2) = -zpsi(2)
+  zLpsi_t(1,1) =  0d0    ; zLpsi_t(2,1) =  zpsi(1)
+  zLpsi_t(1,2) = -zpsi(1); zLpsi_t(2,2) =  zpsi(2)
 
   p1 = gamma1*(abs(zLpsi_t(1,1))**2 + abs(zLpsi_t(2,1))**2)
   p2 = gamma2*(abs(zLpsi_t(1,2))**2 + abs(zLpsi_t(2,2))**2)
