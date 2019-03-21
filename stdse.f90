@@ -42,7 +42,7 @@ module global_variables
   real(8) :: eps_F(2)
 
 ! Photoelectron spectroscopy
-  logical,parameter :: if_calc_PES = .false.
+  logical,parameter :: if_calc_PES = .true.
   integer :: it_PES_ini, it_PES_fin
   integer :: NE_PES
   real(8),allocatable :: eps_PES(:)
@@ -75,7 +75,7 @@ subroutine input
   use global_variables
   implicit none
 
-  ntraj = 1024
+  ntraj = 64 !1024
 
   Egap = 1d0
   T1_relax = 30d0
@@ -92,7 +92,7 @@ subroutine input
 
 
   Tprop = 60d0*2d0*pi/omega0
-  dt = 0.005d0
+  dt = 0.1d0
 
 
   write(*,"(A,2x,e26.16e3)")"input   dt=",dt
@@ -170,8 +170,13 @@ subroutine time_propagation
   integer :: itraj
   real(8) :: ss
   real(8),allocatable :: pop(:,:), dip(:)
+  real(8),allocatable :: pop_PES(:)
 
   allocate(pop(0:nt+1,2), dip(0:nt+1))
+  if(if_calc_pes)then
+    allocate(pop_PES(0:NE_PES))
+    pop_PES = 0d0
+  end if
   pop = 0d0; dip = 0d0
 
   do itraj = 1, ntraj
@@ -179,6 +184,8 @@ subroutine time_propagation
 
     zpsi = 0d0
     zpsi(2) = 1d0
+    if(if_calc_pes)zCt_PES = 0d0
+
     call ranlux_double_mpi(prob)
     it = 0
     ss = sum(abs(zpsi)**2)
@@ -188,7 +195,9 @@ subroutine time_propagation
 
     do it = 0,nt
 
+      if(if_calc_pes .and. it>=it_PES_ini .and. it<=it_PES_fin)call dt_evolve_PES_1st_half(it)
       call dt_evolve(it, prob)
+      if(if_calc_pes .and. it>=it_PES_ini .and. it<=it_PES_fin)call dt_evolve_PES_2nd_half(it)
       ss = sum(abs(zpsi)**2)
       pop(it+1,1) = pop(it+1,1) + abs(zpsi(1))**2/ss
       pop(it+1,2) = pop(it+1,2) + abs(zpsi(2))**2/ss
@@ -196,10 +205,15 @@ subroutine time_propagation
 
     end do
 
+    if(if_calc_pes)pop_PES = pop_PES + abs(zCt_PES(:))**2
+
   end do
 
   call comm_allreduce(pop); pop=pop/ntraj
   call comm_allreduce(dip); dip=dip/ntraj
+  if(if_calc_pes)then
+    call comm_allreduce(pop_PES); pop_PES=pop_PES/ntraj
+  end if
 
   if(if_root_global)then
     open(21,file='quantities_t.out')
@@ -207,6 +221,12 @@ subroutine time_propagation
       write(21,"(999e26.16e3)")tt(it),Et(it),pop(it,1),pop(it,2),dip(it)
     end do
     close(21)
+
+    open(20,file='pes_spectrum.out')
+    do ipes = 0,NE_PES
+      write(20,"(999e26.16e3)")eps_PES(ipes)-omega_PES,pop_PES(ipes)
+    end do
+    close(20)
   end if
 
 end subroutine time_propagation
