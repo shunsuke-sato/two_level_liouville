@@ -31,7 +31,7 @@ module global_variables
   real(8) :: eps_F(2)
 
 ! Photoelectron spectroscopy
-  logical,parameter :: if_calc_PES = .true.
+  logical,parameter :: if_calc_PES = .false.
   integer :: it_PES_ini, it_PES_fin
   integer :: NE_PES
   real(8),allocatable :: eps_PES(:)
@@ -136,15 +136,18 @@ subroutine time_propagation
   integer :: it, ipes
   real(8) :: pop, dip
   real(8) :: s_floquet
+  real(8) :: Smat_floquet(2,2)
+
+  Smat_floquet = 0d0
 
   open(21,file='quantities_t.out')
   write(21,"(999e26.16e3)")tt(0),Et(0),real(zrho_dm(1,1)),real(zrho_dm(2,2)),&
                           &2d0*real(zi*zrho_dm(1,2))
 
   it = 0
-  open(22,file='fidelity_t.out')
-  call calc_floquet_fidelity_inst(it,s_floquet)
-  write(22,"(999e26.16e3)")tt(0),s_floquet
+!  open(22,file='fidelity_t.out')
+!  call calc_floquet_fidelity_inst(it,s_floquet)
+!  write(22,"(999e26.16e3)")tt(0),s_floquet
 
 
   do it = 0,nt
@@ -158,13 +161,20 @@ subroutine time_propagation
                            & real(zrho_dm(1,1)),real(zrho_dm(2,2)),&
                            & 2d0*real(zrho_dm(1,2))
 
-  call calc_floquet_fidelity_inst(it,s_floquet)
-  write(22,"(999e26.16e3)")tt(it),s_floquet
+!  call calc_floquet_fidelity_inst(it,s_floquet)
+!  write(22,"(999e26.16e3)")tt(it),s_floquet
+    if(it > nt-nt_cycle)then
+      call add_fidelity_matrix(Smat_floquet,it)
+    end if
 
   end do
 
   close(21)
-  close(22)
+!  close(22)
+
+  Smat_floquet = Smat_floquet/(2d0*pi/omega0)
+  write(*,"(A,2x,999e26.16e3)")'Floquet fidelity='&
+    ,abs(smat_floquet(1,1)*smat_floquet(2,2)-smat_floquet(1,2)*smat_floquet(2,1))
 
 
   if(if_calc_pes)then
@@ -624,6 +634,49 @@ subroutine calc_floquet_state_vs_E0
 
 end subroutine calc_floquet_state_vs_E0
 !-------------------------------------------------------------------------------
+subroutine add_fidelity_matrix(Smat_floquet,it)
+  use global_variables
+  implicit none
+  real(8),intent(inout) :: smat_floquet(2,2)
+  integer,intent(in) :: it
+  complex(8) :: zpsi_F_inst(2,2)
+  complex(8) :: zpsi_NO(2,2),zvec(2)
+  real(8) :: smat(2,2)
+  real(8) :: lambda(2)
+  real(8) :: ss_even, ss_odd
+  complex(8),save :: zpsi_NO_old(2,2)
+  logical,save :: if_first =.true.
+
+  if(if_first)then
+    if_first = .false.
+    zpsi_NO_old = 0d0
+    zpsi_NO_old(1,1) = 1d0
+    zpsi_NO_old(2,2) = 1d0
+  end if
+
+  call calc_instantaneous_floquet_state(it, zpsi_F_inst)
+  call diag_2x2(zrho_dm,zpsi_NO,lambda)
+  ss_even = abs(sum(conjg(zpsi_NO_old(:,1))*zpsi_NO(:,1)))**2
+  ss_odd  = abs(sum(conjg(zpsi_NO_old(:,2))*zpsi_NO(:,1)))**2
+  if(ss_odd>ss_even)then
+    zvec(:) = zpsi_NO(:,1)
+    zpsi_NO(:,1) = zpsi_NO(:,2)
+    zpsi_NO(:,2) = zvec(:)
+  end if
+  zpsi_NO_old = zpsi_NO
+
+
+!  write(*,*)"norm-F",sum(abs(zpsi_F_inst(:,1))**2),sum(abs(zpsi_F_inst(:,2))**2)
+
+  smat(1,1) = abs(sum(conjg(zpsi_NO(:,1))*zpsi_F_inst(:,1)))**2
+  smat(2,1) = abs(sum(conjg(zpsi_NO(:,2))*zpsi_F_inst(:,1)))**2
+  smat(1,2) = abs(sum(conjg(zpsi_NO(:,1))*zpsi_F_inst(:,2)))**2
+  smat(2,2) = abs(sum(conjg(zpsi_NO(:,2))*zpsi_F_inst(:,2)))**2
+
+  Smat_floquet = Smat_floquet + dt*smat
+  
+
+end subroutine add_fidelity_matrix
 !-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
 !-------------------------------------------------------------------------------
