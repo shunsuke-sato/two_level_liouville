@@ -68,14 +68,14 @@ subroutine input
 
 
   Egap = 1d0
-  T1_relax = 30d0
+  T1_relax = 1d20
   T2_relax = 30d0
 
   omega0 = Egap
-  E0 = 0.3d0
+  E0 = 1.0d0
 
 
-  Tprop = 60d0*2d0*pi/omega0
+  Tprop = 6d0*2d0*pi/omega0
   dt = 0.01d0
 
 
@@ -96,7 +96,11 @@ subroutine initialize
   integer :: it
 
   zrho_dm = 0d0
-  zrho_dm(2,2) = 1d0
+!  zrho_dm(2,2) = 1d0
+  zrho_dm(1,1) = 0.5d0
+  zrho_dm(2,2) = 0.5d0
+  zrho_dm(1,2) = 0.5d0*zi
+  zrho_dm(2,1) = conjg(zrho_dm(1,2))
 
 
   allocate(tt(0:nt+1))
@@ -137,6 +141,8 @@ subroutine time_propagation
   real(8) :: pop, dip
   real(8) :: s_floquet
   real(8) :: Smat_floquet(2,2)
+  real(8) :: sigma_x_t(0:nt+1),sigma_y_t(0:nt+1),sigma_z_t(0:nt+1)
+  real(8) :: Ejule
 
   Smat_floquet = 0d0
 
@@ -148,7 +154,9 @@ subroutine time_propagation
 !  open(22,file='fidelity_t.out')
 !  call calc_floquet_fidelity_inst(it,s_floquet)
 !  write(22,"(999e26.16e3)")tt(0),s_floquet
-
+  sigma_z_t(it)=real(zrho_dm(1,1)-zrho_dm(2,2))
+  sigma_x_t(it)=2d0*real(zrho_dm(1,2))
+  sigma_y_t(it)=2d0*aimag(zrho_dm(2,1))
 
   do it = 0,nt
 
@@ -161,6 +169,10 @@ subroutine time_propagation
                            & real(zrho_dm(1,1)),real(zrho_dm(2,2)),&
                            & 2d0*real(zrho_dm(1,2))
 
+    sigma_z_t(it+1)=real(zrho_dm(1,1)-zrho_dm(2,2))
+    sigma_x_t(it+1)=2d0*real(zrho_dm(1,2))
+    sigma_y_t(it+1)=2d0*aimag(zrho_dm(2,1))
+
 !  call calc_floquet_fidelity_inst(it,s_floquet)
 !  write(22,"(999e26.16e3)")tt(it),s_floquet
     if(it > nt-nt_cycle)then
@@ -171,6 +183,21 @@ subroutine time_propagation
 
   close(21)
 !  close(22)
+
+  open(21,file='jule_heat.out')
+  it = nt-nt_cycle
+  Ejule = 0d0
+  write(21,"(999e26.16e3)")it*dt,Et(it)&
+    ,sigma_z_t(it)*0.5d0*Egap-sigma_z_t(nt-nt_cycle)*0.5d0*Egap,Ejule
+  Ejule = 0.5d0*Egap*sigma_y_t(nt-nt_cycle)*Et(nt-nt_cycle)*dt*0.5d0
+  do it = nt-nt_cycle+1,nt
+    Ejule = Ejule + sigma_y_t(it)*Et(it)*dt*0.5d0
+    write(21,"(999e26.16e3)")it*dt,Et(it)&
+    ,sigma_z_t(it)*0.5d0*Egap-sigma_z_t(nt-nt_cycle)*0.5d0*Egap,Ejule
+    Ejule = Ejule + sigma_y_t(it)*Et(it)*dt*0.5d0
+  end do
+  close(21)
+
 
   Smat_floquet = Smat_floquet/(2d0*pi/omega0)
   write(*,"(A,2x,999e26.16e3)")'Floquet fidelity='&
