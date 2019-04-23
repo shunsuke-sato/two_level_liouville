@@ -75,7 +75,7 @@ subroutine input
   use global_variables
   implicit none
 
-  ntraj = 64 !1024
+  ntraj = 128 !1024
 
   Egap = 1d0
   T1_relax = 30d0
@@ -87,11 +87,11 @@ subroutine input
   gamma2 = 0.5d0*(1d0/T2_relax - 0.5d0*gamma1)
 
   omega0 = Egap
-  E0 = 0.3d0
+  E0 = 0.1d0
   T0 = 20d0*2d0*pi/omega0
 
 
-  Tprop = 60d0*2d0*pi/omega0
+  Tprop = 160d0*2d0*pi/omega0
   dt = 0.1d0
 
 
@@ -360,16 +360,16 @@ subroutine initialize_PES
 
   NE_PES = 512
   omega_PES = Egap * 100d0
-  omega_range_PES = 3d0*Egap
+  omega_range_PES = 0.3d0*Egap
 
-  Tpulse_PES = 20d0*2d0*pi/omega0
+  Tpulse_PES = 100d0*2d0*pi/omega0
 
   allocate(eps_PES(0:NE_PES), zCt_PES(0:nt+1))
   allocate(Et_env_PES(0:nt+1))
   zCt_PES = 0d0
 
-  wi = omega_PES - omega_range_PES
-  wf = omega_PES + omega_range_PES
+  wi = omega_PES - omega_range_PES - 0.5d0*Egap
+  wf = omega_PES + omega_range_PES - 0.5d0*Egap
   dw = (wf-wi)/NE_PES
 
   do iw = 0, NE_PES
