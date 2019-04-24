@@ -75,7 +75,7 @@ subroutine input
   use global_variables
   implicit none
 
-  ntraj = 64 !1024
+  ntraj = 128 !1024
 
   Egap = 1d0
   T1_relax = 30d0
@@ -87,11 +87,11 @@ subroutine input
   gamma2 = 0.5d0*(1d0/T2_relax - 0.5d0*gamma1)
 
   omega0 = Egap
-  E0 = 0.3d0
+  E0 = 0.1d0
   T0 = 20d0*2d0*pi/omega0
 
 
-  Tprop = 60d0*2d0*pi/omega0
+  Tprop = 160d0*2d0*pi/omega0
   dt = 0.1d0
 
 
@@ -195,9 +195,8 @@ subroutine time_propagation
 
     do it = 0,nt
 
-      if(if_calc_pes .and. it>=it_PES_ini .and. it<=it_PES_fin)call dt_evolve_PES_1st_half(it)
       call dt_evolve(it, prob)
-      if(if_calc_pes .and. it>=it_PES_ini .and. it<=it_PES_fin)call dt_evolve_PES_2nd_half(it)
+      if(if_calc_pes .and. it>=it_PES_ini .and. it<=it_PES_fin)call calc_zCt_PES(it+1, zCt_PES(it+1))
       ss = sum(abs(zpsi)**2)
       pop(it+1,1) = pop(it+1,1) + abs(zpsi(1))**2/ss
       pop(it+1,2) = pop(it+1,2) + abs(zpsi(2))**2/ss
@@ -205,7 +204,10 @@ subroutine time_propagation
 
     end do
 
-    if(if_calc_pes)pop_PES = pop_PES + abs(zCt_PES(:))**2
+    if(if_calc_pes)then
+      call add_PES_population(pop_PES,zCt_PES)
+    end if
+
 
   end do
 
@@ -358,16 +360,16 @@ subroutine initialize_PES
 
   NE_PES = 512
   omega_PES = Egap * 100d0
-  omega_range_PES = 3d0*Egap
+  omega_range_PES = 0.3d0*Egap
 
-  Tpulse_PES = 20d0*2d0*pi/omega0
+  Tpulse_PES = 100d0*2d0*pi/omega0
 
-  allocate(eps_PES(0:NE_PES), zCt_PES(0:NE_PES))
+  allocate(eps_PES(0:NE_PES), zCt_PES(0:nt+1))
   allocate(Et_env_PES(0:nt+1))
   zCt_PES = 0d0
 
-  wi = omega_PES - omega_range_PES
-  wf = omega_PES + omega_range_PES
+  wi = omega_PES - omega_range_PES - 0.5d0*Egap
+  wf = omega_PES + omega_range_PES - 0.5d0*Egap
   dw = (wf-wi)/NE_PES
 
   do iw = 0, NE_PES
@@ -404,6 +406,36 @@ subroutine initialize_PES
   
 
 end subroutine initialize_PES
+!-------------------------------------------------------------------------------
+subroutine calc_zCt_PES(it, zCt_out)
+  use global_variables
+  implicit none
+  integer,intent(in) :: it
+  complex(8),intent(out) :: zCt_out
+
+  zCt_out = 0.5d0*dt*Et_env_PES(it)*zpsi(2) ! |g>
+
+end subroutine calc_zCt_PES
+!-------------------------------------------------------------------------------
+subroutine add_PES_population(pop_PES_t, zCt_PES_t)
+  use global_variables
+  implicit none
+  real(8),intent(inout) :: pop_PES_t(0:NE_PES)
+  complex(8),intent(in) :: zCt_PES_t(0:nt+1)
+  complex(8) :: zs
+  real(8) :: ww
+  integer :: it, ipes
+
+  do ipes = 0, NE_PES
+    zs = 0d0
+    ww = eps_PES(ipes) - omega_PES
+    do it = it_PES_ini+1, it_PES_fin+1
+      zs = zs + zCt_PES_t(it)*exp(zi*ww*tt(it))
+    end do
+    pop_PES_t(ipes) = pop_PES_t(ipes) + abs(zs*dt)**2
+  end do
+
+end subroutine add_PES_population
 !-------------------------------------------------------------------------------
 subroutine dt_evolve_PES_1st_half(it)
   use global_variables
