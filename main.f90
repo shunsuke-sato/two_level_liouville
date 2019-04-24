@@ -68,14 +68,14 @@ subroutine input
 
 
   Egap = 1d0
-  T1_relax = 1d20
+  T1_relax = 30d0
   T2_relax = 30d0
 
   omega0 = Egap
-  E0 = 1.0d0
+  E0 = 0.01d0
 
 
-  Tprop = 6d0*2d0*pi/omega0
+  Tprop = 60d0*2d0*pi/omega0
   dt = 0.01d0
 
 
@@ -142,7 +142,7 @@ subroutine time_propagation
   real(8) :: s_floquet
   real(8) :: Smat_floquet(2,2)
   real(8) :: sigma_x_t(0:nt+1),sigma_y_t(0:nt+1),sigma_z_t(0:nt+1)
-  real(8) :: Ejule
+  real(8) :: Ejule, Echange
 
   Smat_floquet = 0d0
 
@@ -186,15 +186,14 @@ subroutine time_propagation
 
   open(21,file='jule_heat.out')
   it = nt-nt_cycle
-  Ejule = 0d0
-  write(21,"(999e26.16e3)")it*dt,Et(it)&
-    ,sigma_z_t(it)*0.5d0*Egap-sigma_z_t(nt-nt_cycle)*0.5d0*Egap,Ejule
-  Ejule = 0.5d0*Egap*sigma_y_t(nt-nt_cycle)*Et(nt-nt_cycle)*dt*0.5d0
+  Echange = 0.5d0*(sigma_z_t(it+1)-sigma_z_t(it-1))/dt*0.5d0*Egap
+  Ejule = sigma_y_t(it)*Et(it)
+  write(21,"(999e26.16e3)")it*dt,Et(it), Echange, Ejule
+
   do it = nt-nt_cycle+1,nt
-    Ejule = Ejule + sigma_y_t(it)*Et(it)*dt*0.5d0
-    write(21,"(999e26.16e3)")it*dt,Et(it)&
-    ,sigma_z_t(it)*0.5d0*Egap-sigma_z_t(nt-nt_cycle)*0.5d0*Egap,Ejule
-    Ejule = Ejule + sigma_y_t(it)*Et(it)*dt*0.5d0
+    Echange = 0.5d0*(sigma_z_t(it+1)-sigma_z_t(it-1))/dt*0.5d0*Egap
+    Ejule = sigma_y_t(it)*Et(it)
+    write(21,"(999e26.16e3)")it*dt,Et(it), Echange, Ejule
   end do
   close(21)
 
