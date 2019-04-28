@@ -144,18 +144,18 @@ subroutine initialize_laser
 
     do it = 0, nt+1
       xx = tt(it)
-      if(xx < T0)then
-        Et(it) = E0*sin(omega0*xx)*sin(0.5d0*pi*xx/T0)**2
-      else
+!      if(xx < T0)then
+!        Et(it) = E0*sin(omega0*xx)*sin(0.5d0*pi*xx/T0)**2
+!      else
         Et(it) = E0*sin(omega0*xx)
-      end if
+!      end if
 
       xx = tt(it) + dt*0.5d0
-      if(xx < T0)then
-        Et_dt2(it) = E0*sin(omega0*xx)*sin(0.5d0*pi*xx/T0)**2
-      else
+!      if(xx < T0)then
+!        Et_dt2(it) = E0*sin(omega0*xx)*sin(0.5d0*pi*xx/T0)**2
+!      else
         Et_dt2(it) = E0*sin(omega0*xx)
-      end if
+!      end if
 
     end do
   end if
