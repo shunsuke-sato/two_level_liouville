@@ -412,8 +412,12 @@ subroutine calc_zCt_PES(it, zCt_out)
   implicit none
   integer,intent(in) :: it
   complex(8),intent(out) :: zCt_out
+  real(8) :: ss
 
-  zCt_out = 0.5d0*Et_env_PES(it)*zpsi(2) ! |g>
+
+  ss = abs(zpsi(1))**2+abs(zpsi(2))**2
+
+  zCt_out = 0.5d0*Et_env_PES(it)*zpsi(2)/sqrt(ss) ! |g>
 
 end subroutine calc_zCt_PES
 !-------------------------------------------------------------------------------
