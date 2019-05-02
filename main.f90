@@ -96,11 +96,11 @@ subroutine initialize
   integer :: it
 
   zrho_dm = 0d0
-!  zrho_dm(2,2) = 1d0
-  zrho_dm(1,1) = 0.5d0
-  zrho_dm(2,2) = 0.5d0
-  zrho_dm(1,2) = 0.5d0*zi
-  zrho_dm(2,1) = conjg(zrho_dm(1,2))
+  zrho_dm(2,2) = 1d0
+!  zrho_dm(1,1) = 0.5d0
+!  zrho_dm(2,2) = 0.5d0
+!  zrho_dm(1,2) = 0.5d0*zi
+!  zrho_dm(2,1) = conjg(zrho_dm(1,2))
 
 
   allocate(tt(0:nt+1))
