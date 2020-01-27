@@ -41,6 +41,9 @@ module global_variables
   real(8) :: omega_PES, omega_range_PES
   real(8) :: Tpulse_PES
 
+! l1-coherence
+  real(8) :: coherence_l1
+
 end module global_variables
 !-------------------------------------------------------------------------------
 program main
@@ -145,6 +148,7 @@ subroutine time_propagation
   real(8) :: Ejule, Echange
 
   Smat_floquet = 0d0
+  coherence_l1 = 0d0
 
   open(21,file='quantities_t.out')
   write(21,"(999e26.16e3)")tt(0),Et(0),real(zrho_dm(1,1)),real(zrho_dm(2,2)),&
@@ -177,6 +181,7 @@ subroutine time_propagation
 !  write(22,"(999e26.16e3)")tt(it),s_floquet
     if(it > nt-nt_cycle)then
       call add_fidelity_matrix(Smat_floquet,it)
+      coherence_l1 = coherence_l1 + dt*( abs(zrho_dm(1,2)) + abs(zrho_dm(2,1)) )
     end if
 
   end do
@@ -201,6 +206,9 @@ subroutine time_propagation
   Smat_floquet = Smat_floquet/(2d0*pi/omega0)
   write(*,"(A,2x,999e26.16e3)")'Floquet fidelity='&
     ,abs(smat_floquet(1,1)*smat_floquet(2,2)-smat_floquet(1,2)*smat_floquet(2,1))
+
+  write(*,"(A,2x,999e26.16e3)")'Cycle-averaged l1-Coherence='&
+    ,coherence_l1/(2d0*pi/omega0)
 
 
   if(if_calc_pes)then
